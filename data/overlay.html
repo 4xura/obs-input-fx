@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>InputFX</title>
+<style>
+:root{--accent:#72edf2;--ink:#e8f0f5;--key:#111820;--panel-alpha:.62;--duration:1800ms}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent!important}
+body{font-family:"Bahnschrift","Segoe UI",sans-serif}#tray{position:absolute;left:24px;bottom:24px;display:flex;gap:12px;align-items:center;padding:10px;max-width:calc(100% - 48px)}
+.combo{display:flex;gap:10px;align-items:center;animation:enter .18s cubic-bezier(.16,1,.3,1) both;filter:drop-shadow(0 4px 6px #0008) drop-shadow(0 0 3px #48dce616)}
+.combo.leaving{animation:leave .24s ease both}
+.key{position:relative;isolation:isolate;display:flex;justify-content:center;align-items:center;min-width:64px;height:60px;padding:0 21px;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,9px 100%,0 calc(100% - 9px));background:linear-gradient(125deg,#7e939e57,#40526038);color:var(--ink);font-size:28px;font-weight:500;letter-spacing:.5px;white-space:nowrap}
+.key::before{content:"";position:absolute;z-index:-1;inset:1px;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));background:linear-gradient(150deg,rgba(26,36,45,var(--panel-alpha)),rgba(17,24,32,var(--panel-alpha)))}
+.key::after{content:"";position:absolute;left:14px;bottom:0;width:20px;height:2px;background:#a3b7c36b}
+.key.mod{background:linear-gradient(120deg,rgba(var(--accent-rgb,114,237,242),.45),rgba(var(--accent-rgb,114,237,242),.20));color:var(--accent);font-size:21px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase}
+.key.mod::before{background:linear-gradient(145deg,rgba(18,48,57,var(--panel-alpha)),rgba(16,28,36,var(--panel-alpha)))}.key.mod::after{width:26px;background:var(--accent);box-shadow:0 -2px 9px #72edf240}
+.plus{color:#9ab9c8b0;font:18px "Consolas",monospace;text-shadow:0 1px 3px #0009}.key.mouse{font-size:22px;color:#d2f6f7;gap:12px;letter-spacing:.25px}.key.mouse::after{background:var(--accent)}.key svg{width:22px;height:29px;flex-shrink:0;color:var(--accent)}
+.count{color:#e9a6ce;font:16px "Consolas",monospace;letter-spacing:1px;margin-left:3px;padding:5px 8px;background:#1c1622e8;border-left:1px solid #e9a6ce80}#status{display:none;position:absolute;bottom:4px;left:36px;color:#ffb1a8;font:15px "Segoe UI";text-shadow:0 1px 3px #000}
+@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes leave{to{opacity:0;transform:translateY(4px)}}
+@media(prefers-reduced-motion:reduce){.combo{animation:none}.combo.leaving{opacity:0}}
+.cursor-halo,.cursor-pulse{position:absolute;pointer-events:none;border-radius:50%;border:var(--ring-width,2px) solid var(--ring-color,#72edf2);width:var(--ring-size,44px);height:var(--ring-size,44px);transform:translate(-50%,-50%);box-shadow:0 0 10px color-mix(in srgb,var(--ring-color,#72edf2) 24%,transparent)}
+.cursor-halo{display:none;opacity:var(--ring-alpha,.8);background:color-mix(in srgb,var(--ring-color,#72edf2) 5%,transparent)}
+.cursor-pulse{animation:cursor-pulse var(--ring-duration,550ms) ease-out both}
+@keyframes cursor-pulse{from{opacity:var(--ring-alpha,.8);transform:translate(-50%,-50%) scale(.65)}to{opacity:0;transform:translate(-50%,-50%) scale(1.65)}}
+</style></head><body><div id="tray"></div><div id="status">Input connection unavailable</div>
+<script>
+'use strict';
+const options=new URLSearchParams(location.search), tray=document.querySelector('#tray'), status=document.querySelector('#status');
+const opacity=Number(options.get('opacity')??62),accent=options.get('accent');
+document.documentElement.style.setProperty('--panel-alpha',String(Math.min(100,Math.max(0,Number.isFinite(opacity)?opacity:62))/100));
+if(accent&&/^[0-9a-f]{6}$/i.test(accent)){document.documentElement.style.setProperty('--accent','#'+accent);document.documentElement.style.setProperty('--accent-rgb',[0,2,4].map(i=>parseInt(accent.slice(i,i+2),16)).join(','));}
+const cursorMode=options.get('mode')==='cursor',ringColor=options.get('ringColor')||'72edf2';
+const rootStyle=document.documentElement.style;
+rootStyle.setProperty('--ring-color',/^[0-9a-f]{6}$/i.test(ringColor)?'#'+ringColor:'#72edf2');
+rootStyle.setProperty('--ring-size',(Number(options.get('ringSize'))||44)+'px');rootStyle.setProperty('--ring-width',(Number(options.get('ringWidth'))||2)+'px');rootStyle.setProperty('--ring-duration',(Number(options.get('ringDuration'))||550)+'ms');rootStyle.setProperty('--ring-alpha',String((Number(options.get('ringOpacity')??80))/100));
+const halo=document.createElement('div');halo.className='cursor-halo';document.body.append(halo);if(cursorMode)tray.style.display='none';
+const state={connected:false,rendered:0,lastLabel:'',lastPacketAt:0}; window.overlayState=state;
+let timeout,removal,ws,repeat=1,lastAt=0;
+const modCodes=new Set([16,17,18,91,92,160,161,162,163,164,165]);
+const labels={8:'Backspace',9:'Tab',13:'Enter',19:'Pause',20:'Caps Lock',27:'Esc',32:'Space',33:'Page Up',34:'Page Down',35:'End',36:'Home',37:'←',38:'↑',39:'→',40:'↓',44:'PrtSc',45:'Insert',46:'Delete',91:'Win',92:'Win',93:'Menu',106:'×',107:'+',109:'−',110:'.',111:'/',144:'Num Lock',145:'Scroll Lock',186:';',187:'=',188:',',189:'−',190:'.',191:'/',192:'`',219:'[',220:'\\',221:']',222:"'"};
+function label(code){if(code>=65&&code<=90||code>=48&&code<=57)return String.fromCharCode(code);if(code>=112&&code<=135)return 'F'+(code-111);if(code>=96&&code<=105)return 'Num '+(code-96);return labels[code]||null}
+function modifiers(mask){const result=[];if(mask&0x22)result.push('Ctrl');if(mask&0x88)result.push('Alt');if(mask&0x11)result.push('Shift');if(mask&0x44)result.push('Win');return result}
+function key(text,mod=false){const span=document.createElement('span');span.className='key'+(mod?' mod':'');span.textContent=text;return span}
+const mouseIcon='<svg viewBox="0 0 26 34" fill="none"><rect x="2" y="1" width="22" height="32" rx="11" stroke="currentColor" stroke-width="2"/><path d="M13 2v12M3 14h20" stroke="currentColor" stroke-width="2"/></svg>';
+function display(parts,mouse=false){
+ const text=parts.join(' + '),now=performance.now();repeat=text===state.lastLabel&&now-lastAt<1800?repeat+1:1;lastAt=now;
+ clearTimeout(timeout);clearTimeout(removal);tray.replaceChildren();const combo=document.createElement('div');combo.className='combo';combo.dataset.label=text;
+ parts.forEach((part,index)=>{if(index){const plus=document.createElement('span');plus.className='plus';plus.textContent='+';combo.append(plus)}const el=key(part,index<parts.length-1);if(mouse&&index===parts.length-1){el.classList.add('mouse');el.insertAdjacentHTML('afterbegin',mouseIcon)}combo.append(el)});
+ if(repeat>1){const count=document.createElement('span');count.className='count';count.textContent='×'+repeat;combo.append(count)}tray.append(combo);state.rendered++;state.lastLabel=text;
+ timeout=setTimeout(()=>{combo.classList.add('leaving');removal=setTimeout(()=>combo.remove(),260)},Number(options.get('duration')||1800));
+}
+function handle(packet){state.lastPacketAt=Date.now();const type=packet.event_type||'',mods=modifiers(packet.mask||0);
+ if(cursorMode){if(options.get('ring')==='0')return;const x=Number(packet.x)*innerWidth,y=Number(packet.y)*innerHeight;if(type==='cursor_position'){halo.style.display=packet.visible&&options.get('always')==='1'?'block':'none';halo.style.left=x+'px';halo.style.top=y+'px';}else if(type==='cursor_click'&&Number.isFinite(x)&&Number.isFinite(y)){const pulse=document.createElement('div');pulse.className='cursor-pulse';pulse.style.left=x+'px';pulse.style.top=y+'px';document.body.append(pulse);state.rendered++;setTimeout(()=>pulse.remove(),(Number(options.get('ringDuration'))||550)+100);}return;}
+ if(type==='key_pressed'){const code=Number(packet.rawcode);if(modCodes.has(code))return;const text=label(code);if(!text)return;const special=code<48||code>=112&&code<=135; if(!mods.length&&!special&&options.get('all')!=='1')return;display([...mods,text]);}
+ else if(type==='mouse_pressed'&&options.get('mouse')!=='0'){const text={1:'Left click',2:'Right click',3:'Middle click',4:'Back click',5:'Forward click'}[packet.button];if(text)display([...mods,text],true)}
+ else if(type==='mouse_wheel'&&options.get('mouse')!=='0'){display([...mods,packet.rotation>0?'Scroll down':'Scroll up'],true)}
+}
+window.receiveInput=handle;
+function connect(){const port=options.get('port')||'16899',token=options.get('token');ws=new WebSocket('ws://127.0.0.1:'+port+(token?'/events/'+encodeURIComponent(token):'/'));ws.onopen=()=>{state.connected=true;status.style.display='none'};ws.onmessage=e=>{try{const packet=JSON.parse(e.data);(Array.isArray(packet)?packet:[packet]).forEach(handle)}catch(err){console.warn('Input packet rejected',err.message)}};ws.onerror=()=>{};ws.onclose=()=>{state.connected=false;if(options.get('status')==='1')status.style.display='block';setTimeout(connect,1500)}}
+if(options.get('demo')==='1'){const frames=[{event_type:'key_pressed',rawcode:67,mask:2},{event_type:'key_pressed',rawcode:90,mask:3},{event_type:'mouse_pressed',button:2,mask:0}];let i=0;handle(frames[i++]);setInterval(()=>handle(frames[i++%frames.length]),2200)}else connect();
+</script></body></html>
