@@ -733,7 +733,7 @@ extern "C" __declspec(dllexport) bool obs_module_load() {
         return false;
     config_path =
         (dir / "settings.json").u8string(); /* Preserve settings from the pre-publication plugin name. */
-    const auto legacy = dir.parent_path() / "cyber-input" / "settings.json";
+    const auto legacy = fs::u8path(config_path).parent_path().parent_path() / "cyber-input" / "settings.json";
     if (!fs::exists(fs::u8path(config_path)) && fs::exists(legacy)) {
         fs::copy_file(legacy, fs::u8path(config_path), fs::copy_options::none, ec);
         if (ec && api.blog)
